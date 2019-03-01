@@ -69,6 +69,15 @@ public class SlackNotificationPlugin implements NotificationPlugin {
     private static final Configuration FREEMARKER_CFG = new Configuration();
 
     @PluginProperty(
+        title = "Environment",
+        description = "Environment to notify for",
+        defaultValue = "production",
+        scope=PropertyScope.InstanceOnly,
+        required = true
+    )
+    private String notify_environment;
+
+    @PluginProperty(
         title = "WebHook URL",
         description = "Slack Incoming WebHook URL",
         scope = PropertyScope.Project,
@@ -198,7 +207,20 @@ public class SlackNotificationPlugin implements NotificationPlugin {
                 String.format("Unknown trigger type: [%s].", trigger)
             );
         }
-        final String message = this.generateMessage(trigger, executionData, config);
+
+        Map context = (Map) executionData.get("context");
+        Map options = (Map) context.get("option");
+        String env = (String) options.getOrDefault("environment", "");
+        if (!env.equals(notify_environment)) {
+          SlackNotificationPlugin.LOG.info(
+            String.format(
+              "SLACK Not notifying: env=%s",
+              notify_environment
+            ));
+          return true;
+        }
+
+        final String message = this.generateMessage(trigger, executionData, config, options);
         final String response = this.invokeSlackAPIMethod(message);
         final boolean result = "ok".equals(response);
         if (!result) {
@@ -213,7 +235,7 @@ public class SlackNotificationPlugin implements NotificationPlugin {
         return result;
     }
 
-    private String generateMessage(final String trigger, final Map executionData, final Map config) {
+    private String generateMessage(final String trigger, final Map executionData, final Map config, Map options) {
         final String template = SlackNotificationPlugin.TRIGGER_NOTIFICATION_DATA.get(trigger).template;
         final String color = SlackNotificationPlugin.TRIGGER_NOTIFICATION_DATA.get(trigger).color;
 
@@ -222,6 +244,7 @@ public class SlackNotificationPlugin implements NotificationPlugin {
         model.put("color", color);
         model.put("executionData", executionData);
         model.put("config", config);
+        model.put("options", options);
         final StringWriter writer = new StringWriter();
         try {
             Template ftl = SlackNotificationPlugin.FREEMARKER_CFG.getTemplate(template);
